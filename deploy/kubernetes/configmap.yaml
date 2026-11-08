@@ -1,0 +1,78 @@
+# vmalertsproxy config for the vmselect sidecar.
+#
+# Mount the ConfigMap at /etc/vmalertsproxy and run the sidecar with -config=/etc/vmalertsproxy/config.yaml,
+# see README.md for VMCluster and Helm examples.
+# The config is read at startup only: restart vmselect pods after changing it.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: vmalertsproxy
+  namespace: monitoring
+  labels:
+    app.kubernetes.io/name: vmalertsproxy
+data:
+  config.yaml: |
+    listen_addr: ":8880"
+    backend_timeout: 10s
+    # Rules of every backend are reused for this long by all Grafana requests.
+    cache_ttl: 5s
+    # Return rules of available sites when some of them fail.
+    allow_partial_response: true
+
+    rewrite:
+      # Grafana namespace of a group, e.g. "aaa-0: /etc/vmalert/rules.yaml".
+      file: "{site}: {file}"
+      group: "{group}"
+      # Added to rule labels to filter rules by site in Grafana.
+      site_label: vmalert_site
+      label_rules: true
+      # Keep alert labels unchanged, so Grafana silences match alerts in Alertmanager.
+      label_alerts: false
+
+    backends:
+      # vmalert behind an ingress accessed by IP and routed by the Host header.
+      - name: bbb-0
+        url: https://10.0.0.1
+        headers:
+          Host: vmalert.mycluster.local
+        tls:
+          ca_file: /etc/vmalertsproxy/ca.crt
+
+      # vmalert in the same cluster, created by VictoriaMetrics Operator from a VMAlert named "main".
+      - name: local
+        url: http://vmalert-main.monitoring.svc:8080
+
+      # vmalert behind vmauth with basic auth.
+      # ${VAR} is replaced with the env var of the sidecar container, see the Secret below.
+      - name: aaa-0
+        url: https://vmauth.mycluster.local/vmalert/
+        basic_auth:
+          username: vmalertsproxy
+          password: ${VMALERT_AAA_0_PASSWORD}
+        tls:
+          ca_file: /etc/vmalertsproxy/ca.crt
+
+  # Internal CA, which signs vmalert ingress certificates. CA certificates aren't secret.
+  ca.crt: |
+    -----BEGIN CERTIFICATE-----
+    REPLACE_WITH_INTERNAL_CA_CERTIFICATE
+    -----END CERTIFICATE-----
+---
+# Credentials of the backends. Pass them to the sidecar container as env vars:
+#
+#   env:
+#     - name: VMALERT_AAA_0_PASSWORD
+#       valueFrom:
+#         secretKeyRef:
+#           name: vmalertsproxy
+#           key: aaa-0-password
+apiVersion: v1
+kind: Secret
+metadata:
+  name: vmalertsproxy
+  namespace: monitoring
+  labels:
+    app.kubernetes.io/name: vmalertsproxy
+type: Opaque
+stringData:
+  aaa-0-password: REPLACE_WITH_PASSWORD

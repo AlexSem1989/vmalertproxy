@@ -1,0 +1,57 @@
+# Address to listen for requests from vmselect.
+listen_addr: ":8880"
+
+# Timeout for a single request to a backend.
+backend_timeout: 10s
+
+# How long rules fetched from a backend are reused by all requests. 0 disables caching.
+# Grafana polls rules of every open alerting page, so the cache protects vmalert from load spikes.
+cache_ttl: 5s
+
+# Return data of available backends when some of them fail.
+# Failed backends are listed in the "warnings" field and in logs.
+allow_partial_response: true
+
+rewrite:
+  # Group file is shown by Grafana as the rule namespace.
+  # Placeholders: {site} - backend name, {file} - original file, {group} - original group name.
+  # With multiple backends {site} must be present in file or group template,
+  # otherwise Grafana merges identical rules of different sites into one.
+  file: "{site}: {file}"
+  group: "{group}"
+  # Label with the backend name. Existing labels are never overridden. Empty value disables labeling.
+  site_label: vmalert_site
+  # Add site_label to rule labels, so rules can be filtered by site in Grafana.
+  label_rules: true
+  # Add site_label to alert labels. Keep it disabled unless vmalert sends the same label to Alertmanager
+  # (e.g. -external.label=vmalert_site=msk): Grafana copies alert labels into silence matchers.
+  label_alerts: false
+
+backends:
+  - name: msk
+    url: http://vmalert-msk.monitoring.svc:8880
+  - name: spb
+    url: https://vmalert.spb.example.com
+    basic_auth:
+      username: vmalert
+      # ${VAR} is replaced with the environment variable value.
+      password: ${VMALERT_SPB_PASSWORD}
+    tls:
+      ca_file: /etc/ssl/vmalert/ca.crt
+  - name: nsk
+    # Path prefix and query args of the url are kept, e.g. for vmauth in front of vmalert.
+    url: http://vmauth.nsk.example.com/vmalert/
+    bearer_token_file: /var/run/secrets/vmalert/token
+    headers:
+      X-Scope-OrgID: nsk
+  - name: aaa-0
+    # vmalert behind an ingress accessed by IP, the same as
+    # curl https://10.1.1.1/api/v1/rules -H 'Host: vmalert.mycluster.local'
+    url: https://10.1.1.1
+    headers:
+      Host: vmalert.mycluster.local
+    # SNI and certificate verification use the Host header, unless tls.server_name is set.
+    tls:
+      ca_file: /etc/ssl/internal/ca.crt
+      # Skips certificate verification, the same as curl -k. ca_file is ignored then.
+      # insecure_skip_verify: true

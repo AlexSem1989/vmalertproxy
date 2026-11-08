@@ -1,0 +1,7 @@
+# Routes requests to vmalert by the Host header, like an ingress controller.
+unauthorized_user:
+  url_map:
+    - src_hosts: ['vmalert\.msk\.test']
+      url_prefix: http://vmalert-msk:8880/
+    - src_hosts: ['vmalert\.spb\.test']
+      url_prefix: http://vmalert-spb:8880/

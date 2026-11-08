@@ -1,0 +1,180 @@
+# Tests of vmalertsproxy.
+#
+# Unit tests (gofmt, go vet, go test -race):
+#   docker compose -f test/docker-compose.yml run --rm unit
+#
+# End-to-end tests: VictoriaMetrics proxies vmalert APIs to vmalertsproxy,
+# which merges two vmalert instances with identical rules:
+#   docker compose -f test/docker-compose.yml run --rm --build e2e
+#   docker compose -f test/docker-compose.yml down
+#
+# Manual checks with Grafana at http://localhost:3000/alerting/list:
+#   docker compose -f test/docker-compose.yml --profile grafana up -d --build
+# The "VictoriaMetrics" datasource shows the test sites, and the "VictoriaMetrics host" datasource
+# shows the backends from vmalertsproxy-host.yaml, which may include real vmalert instances.
+name: vmalertsproxy-test
+
+x-vmalertsproxy: &vmalertsproxy
+  image: vmalertsproxy:test
+  build: ..
+
+x-vmalert: &vmalert
+  image: victoriametrics/vmalert:${VM_VERSION:-latest}
+  volumes:
+    - ./rules.yml:/etc/vmalert/rules.yml:ro
+
+x-tools: &tools
+  image: vmalertsproxy-test-tools
+  build:
+    context: .
+    dockerfile_inline: |
+      FROM alpine:3.22
+      RUN apk add --no-cache bash curl jq openssl
+
+x-certs: &certs
+  certs:
+    condition: service_completed_successfully
+
+services:
+  unit:
+    image: golang:1.26
+    profiles: [unit]
+    working_dir: /src
+    volumes:
+      - ..:/src:ro
+      - gomod:/go/pkg/mod
+      - gocache:/root/.cache/go-build
+    command:
+      - sh
+      - -c
+      - |
+        set -e
+        unformatted=$$(gofmt -l .)
+        if [ -n "$$unformatted" ]; then echo "gofmt: unformatted files:" $$unformatted; exit 1; fi
+        go vet ./...
+        go test -race -count=1 ./...
+
+  e2e:
+    <<: *tools
+    profiles: [e2e]
+    volumes:
+      - ./e2e.sh:/e2e.sh:ro
+    command: [bash, /e2e.sh]
+    depends_on:
+      - victoriametrics
+      - vmalertsproxy
+      - vmalertsproxy-partial
+      - vmalertsproxy-host
+      - vmalert-msk
+      - vmalert-spb
+
+  victoriametrics:
+    image: victoriametrics/victoria-metrics:${VM_VERSION:-latest}
+    command:
+      - -vmalert.proxyURL=http://vmalertsproxy:8880
+    ports:
+      - "8428:8428"
+
+  vmalertsproxy:
+    <<: *vmalertsproxy
+    command:
+      - -backend=msk=http://vmalert-msk:8880
+      - -backend=spb=http://vmalert-spb:8880
+      - -cache.ttl=1s
+      - -loggerLevel=debug
+
+  # The same backends plus an unavailable one to test partial responses.
+  vmalertsproxy-partial:
+    <<: *vmalertsproxy
+    command:
+      - -backend=msk=http://vmalert-msk:8880
+      - -backend=spb=http://vmalert-spb:8880
+      - -backend=dead=http://vmalert-dead:8880
+      - -backend.timeout=2s
+
+  # Backends behind an ingress accessed by IP, which routes requests by the Host header over HTTPS.
+  # vmauth plays the ingress role for the test sites.
+  vmalertsproxy-host:
+    <<: *vmalertsproxy
+    command:
+      - -config=/etc/vmalertsproxy/config.yaml
+      - "-backend.header=spb=Host: vmalert.spb.test"
+    volumes:
+      - ./vmalertsproxy-host.yaml:/etc/vmalertsproxy/config.yaml:ro
+      - certs:/certs:ro
+    depends_on:
+      <<: *certs
+      vmauth:
+        condition: service_started
+
+  vmauth:
+    image: victoriametrics/vmauth:${VM_VERSION:-latest}
+    command:
+      - -auth.config=/etc/vmauth/config.yml
+      - -tls
+      - -tlsCertFile=/certs/server.crt
+      - -tlsKeyFile=/certs/server.key
+    volumes:
+      - ./vmauth.yml:/etc/vmauth/config.yml:ro
+      - certs:/certs:ro
+    depends_on: *certs
+
+  # A test CA and a vmauth certificate valid only for the vmalert.<site>.test hosts.
+  certs:
+    <<: *tools
+    volumes:
+      - ./gen-certs.sh:/gen-certs.sh:ro
+      - certs:/certs
+    command: [sh, /gen-certs.sh]
+
+  # Both vmalert instances load the same rules, like vmalert of different sites.
+  # -external.url is used in alert source links, so tests can tell which vmalert answered.
+  vmalert-msk:
+    <<: *vmalert
+    command:
+      - -rule=/etc/vmalert/rules.yml
+      - -datasource.url=http://victoriametrics:8428
+      - -remoteWrite.url=http://victoriametrics:8428
+      - -notifier.blackhole
+      - -evaluationInterval=5s
+      - -external.url=http://vmalert-msk.example
+  vmalert-spb:
+    <<: *vmalert
+    command:
+      - -rule=/etc/vmalert/rules.yml
+      - -datasource.url=http://victoriametrics:8428
+      - -remoteWrite.url=http://victoriametrics:8428
+      - -notifier.blackhole
+      - -evaluationInterval=5s
+      - -external.url=http://vmalert-spb.example
+
+  grafana:
+    image: grafana/grafana:${GRAFANA_VERSION:-latest}
+    profiles: [grafana]
+    environment:
+      GF_AUTH_ANONYMOUS_ENABLED: "true"
+      GF_AUTH_ANONYMOUS_ORG_ROLE: Admin
+      GF_AUTH_DISABLE_LOGIN_FORM: "true"
+    volumes:
+      - ./grafana-datasource.yml:/etc/grafana/provisioning/datasources/victoriametrics.yml:ro
+    ports:
+      - "3000:3000"
+    depends_on:
+      - victoriametrics
+      - victoriametrics-host
+
+  # VictoriaMetrics for the "VictoriaMetrics host" Grafana datasource.
+  victoriametrics-host:
+    image: victoriametrics/victoria-metrics:${VM_VERSION:-latest}
+    profiles: [grafana]
+    command:
+      - -vmalert.proxyURL=http://vmalertsproxy-host:8880
+    ports:
+      - "8429:8428"
+    depends_on:
+      - vmalertsproxy-host
+
+volumes:
+  gomod:
+  gocache:
+  certs:

@@ -1,0 +1,15 @@
+# Backends behind an ingress-like vmauth, which routes requests by the Host header over HTTPS.
+# The vmauth certificate is valid only for the Host names, not for the url host,
+# so TLS works only if SNI and verification use the Host header.
+backends:
+  - name: msk
+    url: https://vmauth:8427
+    headers:
+      Host: vmalert.msk.test
+    tls:
+      ca_file: /certs/ca.crt
+  - name: spb
+    url: https://vmauth:8427
+    # The Host header is set by the -backend.header flag in docker-compose.yml.
+    tls:
+      ca_file: /certs/ca.crt

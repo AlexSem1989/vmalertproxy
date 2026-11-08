@@ -1,0 +1,147 @@
+{
+  "status": "success",
+  "data": {
+    "groups": [
+      {
+        "name": "node",
+        "rules": [
+          {
+            "state": "firing",
+            "name": "HostDown",
+            "query": "up == 0",
+            "duration": 60,
+            "keep_firing_for": 0,
+            "labels": {"severity": "critical"},
+            "annotations": {"summary": "Host {{ $labels.instance }} is down"},
+            "lastError": "",
+            "evaluationTime": 0.0012,
+            "lastEvaluation": "2026-10-21T10:00:00Z",
+            "alerts": [
+              {
+                "state": "firing",
+                "name": "HostDown",
+                "value": "0",
+                "labels": {"alertname": "HostDown", "instance": "node-1:9100", "severity": "critical"},
+                "annotations": {"summary": "Host node-1:9100 is down"},
+                "activeAt": "2026-10-21T09:58:00Z",
+                "id": "5001",
+                "rule_id": "2001",
+                "group_id": "1001",
+                "expression": "up == 0",
+                "source": "http://vmselect/vmui/#/?g0.expr=up+%3D%3D+0",
+                "restored": false,
+                "stabilizing": false
+              }
+            ],
+            "health": "ok",
+            "type": "alerting",
+            "datasourceType": "prometheus",
+            "lastSamples": 1,
+            "lastSeriesFetched": 3,
+            "id": "2001",
+            "group_id": "1001",
+            "group_name": "node",
+            "file": "/etc/vmalert/rules/node.yml",
+            "debug": false,
+            "max_updates_entries": 20
+          },
+          {
+            "state": "",
+            "name": "job:up:sum",
+            "query": "sum(up) by (job)",
+            "duration": 0,
+            "keep_firing_for": 0,
+            "lastError": "",
+            "evaluationTime": 0.0008,
+            "lastEvaluation": "2026-10-21T10:00:00Z",
+            "health": "ok",
+            "type": "recording",
+            "datasourceType": "prometheus",
+            "lastSamples": 0,
+            "lastSeriesFetched": 0,
+            "id": "2002",
+            "group_id": "1001",
+            "group_name": "node",
+            "file": "/etc/vmalert/rules/node.yml",
+            "debug": false,
+            "max_updates_entries": 20
+          },
+          {
+            "state": "inactive",
+            "name": "DiskFull",
+            "query": "node_filesystem_avail_bytes / node_filesystem_size_bytes < 0.1",
+            "duration": 300,
+            "keep_firing_for": 0,
+            "labels": {"severity": "warning"},
+            "annotations": {"summary": "Disk is almost full"},
+            "lastError": "cannot execute query: timeout",
+            "evaluationTime": 30,
+            "lastEvaluation": "2026-10-21T10:00:00Z",
+            "health": "err",
+            "type": "alerting",
+            "datasourceType": "prometheus",
+            "lastSamples": 0,
+            "id": "2003",
+            "group_id": "1001",
+            "group_name": "node",
+            "file": "/etc/vmalert/rules/node.yml",
+            "debug": false,
+            "max_updates_entries": 20
+          }
+        ],
+        "interval": 30,
+        "lastEvaluation": "2026-10-21T10:00:00Z",
+        "type": "prometheus",
+        "id": "1001",
+        "file": "/etc/vmalert/rules/node.yml",
+        "concurrency": 1,
+        "labels": {"team": "infra"},
+        "states": {}
+      },
+      {
+        "name": "logs",
+        "rules": [
+          {
+            "state": "inactive",
+            "name": "ErrorsInLogs",
+            "query": "level:error | stats count() as errors | filter errors:>100",
+            "duration": 0,
+            "keep_firing_for": 0,
+            "lastError": "",
+            "evaluationTime": 0.01,
+            "lastEvaluation": "2026-10-21T10:00:00Z",
+            "health": "ok",
+            "type": "alerting",
+            "datasourceType": "vlogs",
+            "lastSamples": 0,
+            "lastSeriesFetched": 0,
+            "id": "2004",
+            "group_id": "1002",
+            "group_name": "logs",
+            "file": "/etc/vmalert/rules/logs.yml",
+            "debug": false,
+            "max_updates_entries": 20
+          }
+        ],
+        "interval": 60,
+        "lastEvaluation": "2026-10-21T10:00:00Z",
+        "type": "vlogs",
+        "id": "1002",
+        "file": "/etc/vmalert/rules/logs.yml",
+        "concurrency": 1,
+        "states": {}
+      },
+      {
+        "name": "empty",
+        "rules": [],
+        "interval": 60,
+        "lastEvaluation": "0001-01-01T00:00:00Z",
+        "type": "prometheus",
+        "id": "1003",
+        "file": "/etc/vmalert/rules/empty.yml",
+        "concurrency": 1,
+        "states": {}
+      }
+    ]
+  }
+}

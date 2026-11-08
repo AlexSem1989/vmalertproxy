@@ -1,0 +1,13 @@
+# The same rules are loaded by vmalert of every site.
+groups:
+  - name: demo
+    interval: 5s
+    rules:
+      - alert: AlwaysFiring
+        expr: vector(1) > 0
+        labels:
+          severity: critical
+        annotations:
+          summary: Demo alert
+      - record: demo:one
+        expr: vector(1)
